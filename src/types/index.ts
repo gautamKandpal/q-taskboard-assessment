@@ -46,6 +46,29 @@ export type ApiProjectDetail = {
   updatedAt: string;
 };
 
+export type AirtableExportResult =
+  | {
+      taskId: string;
+      status: "created" | "updated";
+      airtableRecordId: string;
+    }
+  | {
+      taskId: string;
+      status: "failed";
+      error: string;
+      retryable: boolean;
+    };
+
+export type AirtableExportSummary = {
+  projectId: string;
+  tableName: string;
+  total: number;
+  created: number;
+  updated: number;
+  failed: number;
+  results: AirtableExportResult[];
+};
+
 export const STATUS_LABELS: Record<TaskStatus, string> = {
   todo: "To do",
   in_progress: "In progress",
