@@ -22,6 +22,8 @@ export function TaskDetail({ task, projectId, members, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [commentBody, setCommentBody] = useState("");
   const [commentError, setCommentError] = useState<string | null>(null);
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editingCommentBody, setEditingCommentBody] = useState("");
   const [currentUser, setCurrentUser] = useState<StoredUser | null>(null);
 
   const { data: commentsData, isFetching: commentsLoading, error: commentsFetchError } = useQuery({
@@ -39,6 +41,7 @@ export function TaskDetail({ task, projectId, members, onClose }: Props) {
     ? members.find((member) => member.user.id === currentUser.id)
     : null;
   const canPostComment = currentMembership ? currentMembership.role !== "viewer" : false;
+  const canModifyComments = canPostComment;
 
   const updateTask = useMutation({
     mutationFn: (input: Partial<ApiTask>) =>
@@ -78,6 +81,35 @@ export function TaskDetail({ task, projectId, members, onClose }: Props) {
       setCommentError(err instanceof Error ? err.message : "comment failed"),
   });
 
+  const updateComment = useMutation({
+    mutationFn: ({ commentId, body }: { commentId: string; body: string }) =>
+      apiFetch<{ comment: ApiComment }>(`/api/tasks/${task.id}/comments/${commentId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ body }),
+      }),
+    onSuccess: () => {
+      setEditingCommentId(null);
+      setEditingCommentBody("");
+      setCommentError(null);
+      queryClient.invalidateQueries({ queryKey: ["taskComments", task.id] });
+    },
+    onError: (err) =>
+      setCommentError(err instanceof Error ? err.message : "comment update failed"),
+  });
+
+  const deleteComment = useMutation({
+    mutationFn: (commentId: string) =>
+      apiFetch<{ ok: true }>(`/api/tasks/${task.id}/comments/${commentId}`, {
+        method: "DELETE",
+      }),
+    onSuccess: () => {
+      setCommentError(null);
+      queryClient.invalidateQueries({ queryKey: ["taskComments", task.id] });
+    },
+    onError: (err) =>
+      setCommentError(err instanceof Error ? err.message : "comment delete failed"),
+  });
+
   function onSave() {
     setError(null);
     updateTask.mutate({
@@ -92,6 +124,18 @@ export function TaskDetail({ task, projectId, members, onClose }: Props) {
     setCommentError(null);
     if (!commentBody.trim()) return;
     createComment.mutate(commentBody.trim());
+  }
+
+  function startEditingComment(comment: ApiComment) {
+    setCommentError(null);
+    setEditingCommentId(comment.id);
+    setEditingCommentBody(comment.body);
+  }
+
+  function onSaveComment(commentId: string) {
+    setCommentError(null);
+    if (!editingCommentBody.trim()) return;
+    updateComment.mutate({ commentId, body: editingCommentBody.trim() });
   }
 
   return (
@@ -191,7 +235,52 @@ export function TaskDetail({ task, projectId, members, onClose }: Props) {
                     <span>{comment.author.name}</span>
                     <span>{new Date(comment.createdAt).toLocaleString()}</span>
                   </div>
-                  <p className="text-sm leading-relaxed">{comment.body}</p>
+                  {editingCommentId === comment.id ? (
+                    <div className="space-y-2">
+                      <textarea
+                        value={editingCommentBody}
+                        onChange={(e) => setEditingCommentBody(e.target.value)}
+                        rows={3}
+                        className="w-full rounded-md bg-surface border border-border px-3 py-2 text-sm focus:border-accent focus:outline-none"
+                      />
+                      <div className="flex justify-end gap-2">
+                        <button
+                          onClick={() => setEditingCommentId(null)}
+                          className="text-xs text-muted hover:text-white"
+                        >
+                          cancel
+                        </button>
+                        <button
+                          onClick={() => onSaveComment(comment.id)}
+                          disabled={updateComment.isPending}
+                          className="text-xs text-accent hover:text-indigo-300 disabled:opacity-50"
+                        >
+                          {updateComment.isPending ? "saving..." : "save"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-sm leading-relaxed">{comment.body}</p>
+                      {canModifyComments ? (
+                        <div className="flex justify-end gap-3 mt-2">
+                          <button
+                            onClick={() => startEditingComment(comment)}
+                            className="text-xs text-muted hover:text-white"
+                          >
+                            edit
+                          </button>
+                          <button
+                            onClick={() => deleteComment.mutate(comment.id)}
+                            disabled={deleteComment.isPending}
+                            className="text-xs text-red-400 hover:text-red-300 disabled:opacity-50"
+                          >
+                            delete
+                          </button>
+                        </div>
+                      ) : null}
+                    </>
+                  )}
                 </div>
               ))}
             </div>
